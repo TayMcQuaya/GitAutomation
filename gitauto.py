@@ -7,7 +7,8 @@ def run_command(command):
     """
     try:
         print(f"Running: {command}")
-        result = subprocess.run(command, shell=True, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Run the command and directly show stdout and stderr
+        result = subprocess.run(command, shell=True, check=True, text=True)
         print(result.stdout)
     except subprocess.CalledProcessError as e:
         print(f"Error while running command: {command}\n{e.stderr}")
@@ -90,11 +91,9 @@ def automate_git():
         return
 
     # Run the git commands
-    run_command("\nRunning git add .")
-
-    run_command(f"\nRunning git commit -m \"{commit_message}\"")
-
-    run_command(f"\nRunning git push origin {branch_name}")
+    run_command("git add .")
+    run_command(f"git commit -m \"{commit_message}\"")
+    run_command(f"git push origin {branch_name}")
 
 if __name__ == "__main__":
     print("\nGit Automation Script\n")
