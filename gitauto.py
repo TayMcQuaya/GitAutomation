@@ -1,23 +1,43 @@
 import os
 import subprocess
+import re
+import shutil
 
 def run_command(command):
     """
     Function to execute a shell command and print its output.
+    Returns the CompletedProcess object.
     """
     try:
-        print(f"Running: {command}")
-        result = subprocess.run(command, shell=True, check=True, text=True)
-        print(result.stdout)
+        print(f"\nRunning: {command}")
+        result = subprocess.run(
+            command,
+            shell=True,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        if result.stdout:
+            print(result.stdout)
+        return result
     except subprocess.CalledProcessError as e:
         print(f"Error while running command: {command}\n{e.stderr}")
+        raise
 
 def get_current_branch():
     """
     Function to get the name of the current Git branch.
     """
     try:
-        result = subprocess.run("git rev-parse --abbrev-ref HEAD", shell=True, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(
+            "git rev-parse --abbrev-ref HEAD",
+            shell=True,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         print(f"Error while getting current branch:\n{e.stderr}")
@@ -29,6 +49,7 @@ def ensure_gitignore():
     """
     gitignore_path = ".gitignore"
     entry = "gitauto.py"
+    pattern = re.compile(rf"^\s*{re.escape(entry)}\s*$", re.IGNORECASE)
 
     try:
         if not os.path.exists(gitignore_path):
@@ -36,9 +57,16 @@ def ensure_gitignore():
                 f.write(entry + "\n")
             print(f"Created .gitignore and added '{entry}'.")
         else:
+            # Create a backup before modifying
+            backup_path = gitignore_path + ".backup"
+            shutil.copy(gitignore_path, backup_path)
+            print(f"Backup of existing .gitignore created at '{backup_path}'.")
+
             with open(gitignore_path, "r") as f:
                 lines = f.readlines()
-            if entry + "\n" not in lines:
+
+            # Check if 'gitauto.py' is already present
+            if not any(pattern.match(line) for line in lines):
                 with open(gitignore_path, "a") as f:
                     f.write(entry + "\n")
                 print(f"Added '{entry}' to .gitignore.")
@@ -65,7 +93,13 @@ def is_git_initialized():
     Function to check if the current directory is a Git repository.
     """
     try:
-        subprocess.run("git rev-parse --is-inside-work-tree", shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(
+            "git rev-parse --is-inside-work-tree",
+            shell=True,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
         return True
     except subprocess.CalledProcessError:
         return False
@@ -74,7 +108,7 @@ def initialize_new_repo():
     """
     Function to initialize a new Git repository and push to GitHub.
     """
-    print("Initializing a new Git repository...")
+    print("\nInitializing a new Git repository...")
 
     # Initialize the repository
     run_command("git init")
@@ -91,20 +125,44 @@ def initialize_new_repo():
     # Set the branch to 'main'
     run_command("git branch -M main")
 
-    # Get GitHub username and repo name
-    username = input("Enter your GitHub username (leave blank to fetch automatically): ").strip()
-    repo_name = input("Enter the name of your GitHub repository: ").strip()
+    while True:
+        username = input("Enter your GitHub username: ").strip()
+        repo_name = input("Enter the name of your GitHub repository: ").strip()
 
-    if username and repo_name:
-        # Add the remote repository
+        if not username or not repo_name:
+            print("Username and repository name cannot be empty. Please try again.")
+            continue
+
         remote_url = f"https://github.com/{username}/{repo_name}.git"
-        run_command(f"git remote add origin {remote_url}")
 
-        # Push to the main branch
-        run_command("git push -u origin main")
-    else:
-        print("GitHub username or repository name not provided. Aborting.")
-        return
+        # Check if 'origin' remote exists
+        try:
+            subprocess.run(
+                "git remote get-url origin",
+                shell=True,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            # Remote exists, set-url
+            run_command(f"git remote set-url origin {remote_url}")
+            print(f"Updated 'origin' remote to {remote_url}")
+        except subprocess.CalledProcessError:
+            # Remote does not exist, add it
+            run_command(f"git remote add origin {remote_url}")
+            print(f"Added 'origin' remote as {remote_url}")
+
+        try:
+            run_command("git push -u origin main")
+            print("Repository successfully pushed to GitHub.")
+            break
+        except subprocess.CalledProcessError as e:
+            print("Failed to push to GitHub. This may be due to incorrect username or repository name, or authentication issues.")
+            print(f"Error: {e.stderr}")
+            retry = confirm_action("Do you want to try entering the GitHub details again? (yes/y to retry, no/n to cancel): ")
+            if not retry:
+                print("Operation canceled.")
+                return
 
 def automate_git():
     """
@@ -145,7 +203,7 @@ def automate_git():
 
         # Run the git commands
         run_command("git add .")
-        run_command(f"git commit -m \"{commit_message}\"")
+        run_command(f'git commit -m "{commit_message}"')
         run_command(f"git push origin {branch_name}")
 
 if __name__ == "__main__":
@@ -156,5 +214,5 @@ if __name__ == "__main__":
     print("3. Ensures .gitignore includes 'gitauto.py'.")
     print("4. Stages all changes (git add .).")
     print("5. Commits with a custom or default message (git commit).")
-    print("6. Pushes to the current branch or sets up a new remote for new repositories.")
+    print("6. Pushes to the current branch or sets up a new remote for new repositories.\n")
     automate_git()
